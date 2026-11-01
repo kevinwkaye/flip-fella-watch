@@ -14,6 +14,7 @@ import android.graphics.Typeface
 import android.os.BatteryManager
 import android.os.SystemClock
 import android.view.SurfaceHolder
+import androidx.wear.watchface.CanvasType
 import androidx.wear.watchface.ComplicationSlotsManager
 import androidx.wear.watchface.DrawMode
 import androidx.wear.watchface.Renderer
