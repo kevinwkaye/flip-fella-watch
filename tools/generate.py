@@ -56,6 +56,8 @@ class Face:
         self.xml = []
         self.svg = []
         self.n = 0
+        self.ox = 0
+        self.oy = 0
 
     def name(self, base):
         self.n += 1
@@ -138,7 +140,7 @@ class Face:
             body = f"<Upper>{body}</Upper>"
         variant = f'<Variant mode="AMBIENT" target="alpha" value="{ambient_alpha}"/>' if ambient_alpha is not None else ""
         self.xml.append(
-            f'<PartText {attrs(name=self.name("text"), x=f(x), y=f(y), width=f(w), height=f(h), angle=f(angle) if angle else None, alpha=base_alpha)}>'
+            f'<PartText {attrs(name=self.name("text"), x=f(x - self.ox), y=f(y - self.oy), width=f(w), height=f(h), angle=f(angle) if angle else None, alpha=base_alpha)}>'
             f'{variant}<Text align="CENTER"><Font {attrs(family=family, size=f(size), color=color)}>{body}</Font></Text></PartText>'
         )
         if svg_hidden:
@@ -152,16 +154,17 @@ class Face:
             f'font-family="{fam}" font-weight="{weight}" font-size="{f(size)}" fill="{color}"{rot}>{escape(shown)}</text>'
         )
 
-    def image(self, x, y, w, h, resource, svg_png=None, ambient_alpha=None, base_alpha=None):
+    def image(self, x, y, w, h, resource, svg_png=None, ambient_alpha=None, base_alpha=None,
+              tint=None, gyro=""):
         x, y, w, h = (int(round(v)) for v in (x, y, w, h))
         variant = f'<Variant mode="AMBIENT" target="alpha" value="{ambient_alpha}"/>' if ambient_alpha is not None else ""
         self.xml.append(
-            f'<PartImage {attrs(name=self.name("image"), x=f(x), y=f(y), width=f(w), height=f(h), alpha=base_alpha)}>'
-            f'{variant}<Image resource="{resource}"/></PartImage>'
+            f'<PartImage {attrs(name=self.name("image"), x=f(x - self.ox), y=f(y - self.oy), width=f(w), height=f(h), alpha=base_alpha, tintColor=tint)}>'
+            f'{variant}{gyro}<Image resource="{resource}"/></PartImage>'
         )
         if svg_png:
             import base64
-            with open(os.path.join(DRAW, resource + ".png"), "rb") as fh:
+            with open(os.path.join(DRAW, svg_png + ".png"), "rb") as fh:
                 data = base64.b64encode(fh.read()).decode()
             self.svg.append(f'<image x="{f(x)}" y="{f(y)}" width="{f(w)}" height="{f(h)}" href="data:image/png;base64,{data}"/>')
 
@@ -224,10 +227,76 @@ def render_png(svg, name):
     return dst
 
 
+
+# ---------------------------------------------------------------- Pebble layers
+BODY = "M100 22 C146 20 176 54 174 100 C172 146 140 176 98 174 C54 172 24 142 26 98 C28 56 58 24 100 22Z"
+EYES = ((78, 80), (122, 80))
+
+
+def pebble_svg(inner, window=True, dy=0):
+    """Pebble's window at 2x. `inner` is drawn in body coordinates, moved by dy."""
+    bg = ('<circle cx="44" cy="44" r="43" fill="#151518" stroke="#2A2A2E" stroke-width="2"/>'
+          if window else "")
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="176" height="176" viewBox="0 0 88 88">'
+            f'<defs><clipPath id="w"><circle cx="44" cy="44" r="42"/></clipPath></defs>{bg}'
+            f'<g clip-path="url(#w)"><g transform="translate(-6 {30 + dy * 0.5}) scale(0.5)">{inner}</g></g></svg>')
+
+
+def body_parts(eyes="open", mouth="smile"):
+    out = (f'<path transform="translate(7 9)" fill="#2329A8" d="{BODY}"/>'
+           f'<path fill="#4B57FF" d="{BODY}"/>')
+    if eyes == "open":
+        out += "".join(f'<circle cx="{x}" cy="{y}" r="18" fill="#FFFFFF"/>' for x, y in EYES)
+    elif eyes == "happy":
+        out += ('<path d="M62 86 Q78 70 94 86 M106 86 Q122 70 138 86" stroke="#0B0B12" '
+                'stroke-width="6" stroke-linecap="round" fill="none"/>')
+    if mouth == "smile":
+        out += '<path d="M88 116 Q100 126 112 116" stroke="#0B0B12" stroke-width="6" stroke-linecap="round" fill="none"/>'
+    elif mouth == "open":
+        out += ('<path d="M84 104 H116 Q114 132 100 132 Q86 132 84 104 Z" fill="#0B0B12"/>'
+                '<path d="M92 125 Q100 120 108 125 Q105 131 100 131 Q95 131 92 125 Z" fill="#FF6B8A"/>')
+    return out
+
+
+PUPILS = "".join(f'<circle cx="{x + 1}" cy="{y - 4}" r="9" fill="#0B0B12"/>' for x, y in EYES)
+
+
+def lids(p):
+    """Eyelids closing from the top. p = 0 open, 1 shut."""
+    out = '<defs>' + "".join(
+        f'<clipPath id="e{i}"><circle cx="{x}" cy="{y}" r="18.6"/></clipPath>' for i, (x, y) in enumerate(EYES)) + '</defs>'
+    for i, (x, y) in enumerate(EYES):
+        h = 38 * p
+        out += f'<rect x="{x - 20}" y="{y - 20}" width="40" height="{h}" fill="#4B57FF" clip-path="url(#e{i})"/>'
+        if p >= 1:
+            out += f'<path d="M{x - 16} {y} Q{x} {y + 8} {x + 16} {y}" stroke="#0B0B12" stroke-width="6" stroke-linecap="round" fill="none"/>'
+    return out
+
+
+SPARKS = ('<g stroke="#FFD24A" stroke-width="5" stroke-linecap="round">'
+          '<path d="M30 40 L42 50"/><path d="M170 40 L158 50"/><path d="M100 2 L100 14"/></g>')
+
+BLINK_LEVELS = [0.55, 1, 1, 0.55]
+BLINK_FRAMES = [f"pebble_blink_{i}" for i in range(len(BLINK_LEVELS))]
+HAPPY_DY = [0, -8, -16, -22, -24, -20, -12, -2, 4, 2, -6, -8, -4, 0]
+HAPPY_FRAMES = [f"pebble_happy_{i}" for i in range(len(HAPPY_DY))]
+
+
+def pebble_assets():
+    render_png(pebble_svg(body_parts()), "pebble_base")
+    render_png(pebble_svg(PUPILS, window=False), "pebble_pupils")
+    for name, p in zip(BLINK_FRAMES, BLINK_LEVELS):
+        render_png(pebble_svg(lids(p), window=False), name)
+    for i, (name, dy) in enumerate(zip(HAPPY_FRAMES, HAPPY_DY)):
+        sparks = SPARKS if 3 <= i <= 6 else ""
+        render_png(pebble_svg(sparks + body_parts(eyes="happy", mouth="open"), dy=dy), name)
+
+
 # ==================================================================== face
 
 def build():
-    for svg, name in [(PEBBLE_SVG, "pebble"), (PEBBLE_SLEEP_SVG, "pebble_sleep"),
+    pebble_assets()
+    for svg, name in [(PEBBLE_SLEEP_SVG, "pebble_sleep"),
                       (POINTER_SVG, "pointer"), (HEART_SVG, "heart"), (FEET_SVG, "feet")]:
         render_png(svg, name)
 
@@ -275,20 +344,54 @@ def build():
     # Inner disc
     face.draw([("ellipse", dict(x=66, y=66, w=348, h=348, fill=DISC, stroke=("#1F1F23", 2)))], variant_alpha=0)
 
-    # Battery arc (8 to 10) and steps arc (2 to 4)
-    batt_end = f"244 + 52 * clamp([BATTERY_PERCENT], 0, 100) / 100"
-    step_end = f"64 + 52 * clamp([STEP_PERCENT], 0, 100) / 100"
-    face.draw([
-        ("arc", dict(cx=C, cy=C, w=360, h=360, a1=244, a2=296, stroke=("#2A2A2E", 8), cap="ROUND")),
-        ("arc", dict(cx=C, cy=C, w=360, h=360, a1=244, a2=296, stroke=(INK, 8), cap="ROUND",
-                     transforms=[("endAngle", batt_end)], svg_a2=244 + 52 * s["battery"] / 100)),
-        ("arc", dict(cx=C, cy=C, w=360, h=360, a1=64, a2=116, stroke=("#2A2A2E", 8), cap="ROUND")),
-        ("arc", dict(cx=C, cy=C, w=360, h=360, a1=64, a2=116, stroke=(INK, 8), dash="3 3",
-                     transforms=[("endAngle", step_end)], svg_a2=64 + 52 * s["step_pct"] / 100)),
-    ], variant_alpha=0)
+    # Arcs: two customisable slots. Left defaults to battery, right to built-in steps.
+    def arc_value(a1, frac_expr):
+        return f"{a1} + 52 * clamp({frac_expr}, 0, 1)"
 
-    face.text(76, C, "", 15, F_LABEL, MUTED, w=60, h=22, angle=-90,
-              template=("%d%%", ["[BATTERY_PERCENT]"]), svg_text=f'{s["battery"]}%', ambient_alpha=0)
+    ranged_frac = ("([COMPLICATION.RANGED_VALUE_VALUE] - [COMPLICATION.RANGED_VALUE_MIN]) / "
+                   "(([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]) > 0 ? "
+                   "([COMPLICATION.RANGED_VALUE_MAX] - [COMPLICATION.RANGED_VALUE_MIN]) : 1)")
+    goal_frac = ("[COMPLICATION.GOAL_PROGRESS_VALUE] / "
+                 "([COMPLICATION.GOAL_PROGRESS_TARGET_VALUE] > 0 ? [COMPLICATION.GOAL_PROGRESS_TARGET_VALUE] : 1)")
+
+    def arc_slot(slot_id, label, a1, dashed, label_x, label_angle, default_provider, default_type,
+                 fallback_frac, fallback_label, sample_frac, sample_label):
+        def arc_parts(frac_expr, text_template, show_svg):
+            dash = "3 3" if dashed else None
+            start = face.capture()
+            face.draw([
+                ("arc", dict(cx=C, cy=C, w=360, h=360, a1=a1, a2=a1 + 52, stroke=("#2A2A2E", 8), cap="ROUND")),
+                ("arc", dict(cx=C, cy=C, w=360, h=360, a1=a1, a2=a1 + 52, stroke=(INK, 8),
+                             cap=None if dashed else "ROUND", dash=dash,
+                             transforms=[("endAngle", arc_value(a1, frac_expr))],
+                             svg_a2=a1 + 52 * sample_frac)),
+            ], svg_hidden=not show_svg)
+            face.text(label_x, C, "", 15, F_LABEL, MUTED, w=60, h=22, angle=label_angle,
+                      template=text_template, svg_text=sample_label, svg_hidden=not show_svg)
+            return face.take(start)
+
+        comps = [
+            ("RANGED_VALUE", arc_parts(ranged_frac, ("%s", ["[COMPLICATION.TEXT]"]), False)),
+            ("GOAL_PROGRESS", arc_parts(goal_frac, ("%s", ["[COMPLICATION.TEXT]"]), False)),
+            ("EMPTY", arc_parts(fallback_frac, fallback_label, True)),
+        ]
+        body = "".join(f'<Complication type="{t}">{x}</Complication>' for t, x in comps)
+        face.raw(
+            f'<ComplicationSlot slotId="{slot_id}" name="{label.lower().replace(" ", "_")}" displayName="{label}" '
+            f'x="0" y="0" width="480" height="480" isCustomizable="TRUE" '
+            f'supportedTypes="RANGED_VALUE GOAL_PROGRESS EMPTY">'
+            f'<DefaultProviderPolicy defaultSystemProvider="{default_provider}" defaultSystemProviderType="{default_type}"/>'
+            f'<BoundingArc centerX="240" centerY="240" width="360" height="360" thickness="40" '
+            f'startAngle="{a1}" endAngle="{a1 + 52}" isRoundEdge="TRUE"/>'
+            f'{body}<Variant mode="AMBIENT" target="alpha" value="0"/></ComplicationSlot>'
+        )
+
+    arc_slot(1, "Left arc", 244, False, 76, -90, "WATCH_BATTERY", "RANGED_VALUE",
+             "[BATTERY_PERCENT] / 100", ("%d%%", ["[BATTERY_PERCENT]"]),
+             s["battery"] / 100, f'{s["battery"]}%')
+    arc_slot(2, "Right arc", 64, True, 404, 90, "EMPTY", "EMPTY",
+             "[STEP_PERCENT] / 100", ("%d%%", ["[STEP_PERCENT]"]),
+             s["step_pct"] / 100, f'{s["step_pct"]}%')
 
     # Seconds dot running round the minute track
     sx, sy = pt(0, 193)
@@ -304,7 +407,7 @@ def build():
     face.svg.append(f'<circle cx="{f(px)}" cy="{f(py)}" r="4.5" fill="{ACCENT}"/>')
 
     # Pointer at 12
-    face.image(234, 3, 12, 11, "pointer", svg_png="../../app/src/main/res/drawable-nodpi/pointer.png", ambient_alpha=0)
+    face.image(234, 3, 12, 11, "pointer", svg_png="pointer", ambient_alpha=0)
 
     # Weekday row: Monday first, today circled in orange, dots for days gone
     letters = ["M", "T", "W", "T", "F", "S", "S"]
@@ -380,67 +483,126 @@ def build():
         ("ellipse", dict(x=235.5, y=250, w=9, h=9, fill=ACCENT)),
     ], variant_alpha=0)
 
-    # Heart rate dial (left)
-    face.image(134, 306, 20, 20, "heart", svg_png="../../app/src/main/res/drawable-nodpi/heart.png", ambient_alpha=0)
-    start = face.capture()
-    face.text(144, 346, "", 30, F_LABEL, INK, w=88, h=40, template=("%d", ["[HEART_RATE]"]), svg_hidden=True)
-    hr_on = face.take(start)
-    start = face.capture()
-    face.text(144, 346, "--", 30, F_LABEL, "#6E6E76", w=88, h=40, svg_hidden=True)
-    hr_off = face.take(start)
-    face.raw(
-        '<Group name="hr" x="0" y="0" width="480" height="480">'
-        '<Variant mode="AMBIENT" target="alpha" value="0"/>'
-        '<Condition><Expressions><Expression name="hasHr"><![CDATA[[HEART_RATE] > 0]]></Expression></Expressions>'
-        f'<Compare expression="hasHr"><Group name="hr_on" x="0" y="0" width="480" height="480">{hr_on}</Group></Compare>'
-        f'<Default><Group name="hr_off" x="0" y="0" width="480" height="480">{hr_off}</Group></Default>'
-        '</Condition></Group>'
-    )
-    face.svg.append(f'<text x="144" y="356.6" text-anchor="middle" font-family="Roboto Condensed" font-weight="700" font-size="30" fill="{INK}">{s["hr"]}</text>')
+    # Dials: two customisable slots. Left falls back to heart rate, right defaults to steps.
+    def dial_slot(slot_id, label, sx, default_provider, default_type, fallback_xml_fn, show_fallback_svg):
+        sy, sw, sh = 296, 88, 76
+        face.ox, face.oy = sx, sy
+        cx = sx + sw / 2
 
-    # Steps dial (right), shown as 6,412
-    face.image(326, 306, 20, 20, "feet", svg_png="../../app/src/main/res/drawable-nodpi/feet.png", ambient_alpha=0)
-    start = face.capture()
-    face.text(336, 346, "", 30, F_LABEL, INK, w=96, h=40, template=(
-        "%d,%d%d%d", ["floor([STEP_COUNT] / 1000)", "floor(([STEP_COUNT] % 1000) / 100)",
-                      "floor(([STEP_COUNT] % 100) / 10)", "[STEP_COUNT] % 10"]), svg_hidden=True)
-    big = face.take(start)
-    start = face.capture()
-    face.text(336, 346, "", 30, F_LABEL, INK, w=96, h=40, template=("%d", ["[STEP_COUNT]"]), svg_hidden=True)
-    small = face.take(start)
-    face.raw(
-        '<Group name="steps" x="0" y="0" width="480" height="480">'
-        '<Variant mode="AMBIENT" target="alpha" value="0"/>'
-        '<Condition><Expressions><Expression name="thousands"><![CDATA[[STEP_COUNT] >= 1000]]></Expression></Expressions>'
-        f'<Compare expression="thousands"><Group name="steps_big" x="0" y="0" width="480" height="480">{big}</Group></Compare>'
-        f'<Default><Group name="steps_small" x="0" y="0" width="480" height="480">{small}</Group></Default>'
-        '</Condition></Group>'
-    )
-    face.svg.append(f'<text x="336" y="356.6" text-anchor="middle" font-family="Roboto Condensed" font-weight="700" font-size="30" fill="{INK}">{s["steps"] // 1000},{s["steps"] % 1000:03d}</text>')
+        def icon_and_text(size):
+            start = face.capture()
+            face.image(cx - 11, sy + 8, 22, 22, "[COMPLICATION.MONOCHROMATIC_IMAGE]", tint=ACCENT)
+            face.text(cx, sy + 50, "", size, F_LABEL, INK, w=sw, h=40,
+                      template=("%s", ["[COMPLICATION.TEXT]"]), svg_hidden=True)
+            return face.take(start)
 
-    # Pebble in his window
-    face.image(190, 302, 100, 100, "pebble", svg_png="../../app/src/main/res/drawable-nodpi/pebble.png", ambient_alpha=0)
+        comps = []
+        for t in ("SHORT_TEXT", "RANGED_VALUE", "GOAL_PROGRESS"):
+            comps.append((t, icon_and_text(28)))
+        start = face.capture()
+        face.text(cx, sy + 38, "", 17, F_LABEL, INK, w=sw, h=60,
+                  template=("%s", ["[COMPLICATION.TEXT]"]), svg_hidden=True)
+        comps.append(("LONG_TEXT", face.take(start)))
+        start = face.capture()
+        face.image(cx - 18, sy + 20, 36, 36, "[COMPLICATION.MONOCHROMATIC_IMAGE]", tint=ACCENT)
+        comps.append(("MONOCHROMATIC_IMAGE", face.take(start)))
+        start = face.capture()
+        face.image(cx - 22, sy + 16, 44, 44, "[COMPLICATION.SMALL_IMAGE]")
+        comps.append(("SMALL_IMAGE", face.take(start)))
+        start = face.capture()
+        fallback_xml_fn(cx, sy, show_fallback_svg)
+        comps.append(("EMPTY", face.take(start)))
+        face.ox, face.oy = 0, 0
 
-    # Compass shortcut slot: under the N, set it to the Compass app from Customise
+        body = "".join(f'<Complication type="{t}">{x}</Complication>' for t, x in comps)
+        face.raw(
+            f'<ComplicationSlot slotId="{slot_id}" name="{label.lower().replace(" ", "_")}" displayName="{label}" '
+            f'x="{sx}" y="{sy}" width="{sw}" height="{sh}" isCustomizable="TRUE" '
+            f'supportedTypes="SHORT_TEXT RANGED_VALUE GOAL_PROGRESS LONG_TEXT MONOCHROMATIC_IMAGE SMALL_IMAGE EMPTY">'
+            f'<DefaultProviderPolicy defaultSystemProvider="{default_provider}" defaultSystemProviderType="{default_type}"/>'
+            f'<BoundingRoundBox x="0" y="0" width="{sw}" height="{sh}" cornerRadius="20" outlinePadding="2"/>'
+            f'{body}<Variant mode="AMBIENT" target="alpha" value="0"/></ComplicationSlot>'
+        )
+
+    def heart_fallback(cx, sy, show_svg):
+        face.image(cx - 10, sy + 10, 20, 20, "heart", svg_png="heart" if show_svg else None)
+        start = face.capture()
+        face.text(cx, sy + 50, "", 30, F_LABEL, INK, w=88, h=40, template=("%d", ["[HEART_RATE]"]),
+                  svg_text=str(s["hr"]), svg_hidden=not show_svg)
+        on = face.take(start)
+        start = face.capture()
+        face.text(cx, sy + 50, "--", 30, F_LABEL, "#6E6E76", w=88, h=40, svg_hidden=True)
+        off = face.take(start)
+        face.raw(
+            '<Condition><Expressions><Expression name="hasHr"><![CDATA[[HEART_RATE] > 0]]></Expression></Expressions>'
+            f'<Compare expression="hasHr"><Group name="hr_on" x="0" y="0" width="88" height="76">{on}</Group></Compare>'
+            f'<Default><Group name="hr_off" x="0" y="0" width="88" height="76">{off}</Group></Default></Condition>'
+        )
+
+    def steps_fallback(cx, sy, show_svg):
+        face.image(cx - 10, sy + 10, 20, 20, "feet", svg_png="feet" if show_svg else None)
+        start = face.capture()
+        face.text(cx, sy + 50, "", 30, F_LABEL, INK, w=96, h=40, template=(
+            "%d,%d%d%d", ["floor([STEP_COUNT] / 1000)", "floor(([STEP_COUNT] % 1000) / 100)",
+                          "floor(([STEP_COUNT] % 100) / 10)", "[STEP_COUNT] % 10"]),
+            svg_text=f'{s["steps"] // 1000},{s["steps"] % 1000:03d}', svg_hidden=not show_svg)
+        big = face.take(start)
+        start = face.capture()
+        face.text(cx, sy + 50, "", 30, F_LABEL, INK, w=96, h=40, template=("%d", ["[STEP_COUNT]"]), svg_hidden=True)
+        small = face.take(start)
+        face.raw(
+            '<Condition><Expressions><Expression name="thousands"><![CDATA[[STEP_COUNT] >= 1000]]></Expression></Expressions>'
+            f'<Compare expression="thousands"><Group name="steps_big" x="0" y="0" width="88" height="76">{big}</Group></Compare>'
+            f'<Default><Group name="steps_small" x="0" y="0" width="88" height="76">{small}</Group></Default></Condition>'
+        )
+
+    dial_slot(3, "Left dial", 100, "EMPTY", "EMPTY", heart_fallback, True)
+    # Right dial: default is the system step counter, falling back to built-in steps if left empty.
+    dial_slot(4, "Right dial", 292, "STEP_COUNT", "SHORT_TEXT", steps_fallback, True)
+
+    # Pebble: base body, eyes that follow your wrist tilt, a blink on wake and each minute,
+    # and a happy bounce when you tap him or the hour changes.
+    face.image(190, 302, 100, 100, "pebble_base", svg_png="pebble_base", ambient_alpha=0)
+    gyro = ('<Gyro x="2.5 * clamp([ACCELEROMETER_ANGLE_X], -45, 45) / 45" '
+            'y="2.5 * clamp([ACCELEROMETER_ANGLE_Y], -45, 45) / 45"/>')
+    face.image(190, 302, 100, 100, "pebble_pupils", svg_png="pebble_pupils", ambient_alpha=0, gyro=gyro)
+
+    def sequence(name, frames, play, fps):
+        imgs = "".join(f'<Image resource="{fr}"/>' for fr in frames)
+        face.raw(
+            f'<PartAnimatedImage name="{name}" x="190" y="302" width="100" height="100">'
+            f'<Variant mode="AMBIENT" target="alpha" value="0"/>'
+            f'<AnimationController play="{play}" beforePlaying="HIDE" afterPlaying="HIDE"/>'
+            f'<SequenceImages frameRate="{fps}" loopCount="1">{imgs}</SequenceImages>'
+            f'</PartAnimatedImage>'
+        )
+
+    sequence("blink", BLINK_FRAMES, "ON_VISIBLE ON_NEXT_MINUTE", 12)
+    sequence("bounce", HAPPY_FRAMES, "TAP ON_NEXT_HOUR", 15)
+
+    # Shortcut slot under the N: accepts every type so the most apps show up in the picker.
+    face.ox, face.oy = 205, 52
+    comps = []
+    start = face.capture()
+    face.image(225, 57, 30, 30, "[COMPLICATION.SMALL_IMAGE]")
+    comps.append(("SMALL_IMAGE", face.take(start)))
+    start = face.capture()
+    face.image(227, 59, 26, 26, "[COMPLICATION.MONOCHROMATIC_IMAGE]", tint=ACCENT)
+    comps.append(("MONOCHROMATIC_IMAGE", face.take(start)))
+    for t in ("SHORT_TEXT", "RANGED_VALUE", "GOAL_PROGRESS", "LONG_TEXT"):
+        start = face.capture()
+        face.text(240, 72, "", 17, F_LABEL, ACCENT, w=70, h=40,
+                  template=("%s", ["[COMPLICATION.TEXT]"]), svg_hidden=True)
+        comps.append((t, face.take(start)))
+    face.ox, face.oy = 0, 0
+    body = "".join(f'<Complication type="{t}">{x}</Complication>' for t, x in comps) + '<Complication type="EMPTY"/>'
     face.raw(
-        '<ComplicationSlot slotId="0" name="compass_shortcut" displayName="Compass shortcut" '
+        '<ComplicationSlot slotId="0" name="top_shortcut" displayName="Top shortcut" '
         'x="205" y="52" width="70" height="40" isCustomizable="TRUE" '
-        'supportedTypes="SMALL_IMAGE MONOCHROMATIC_IMAGE SHORT_TEXT EMPTY">'
+        'supportedTypes="SMALL_IMAGE MONOCHROMATIC_IMAGE SHORT_TEXT RANGED_VALUE GOAL_PROGRESS LONG_TEXT EMPTY">'
         '<DefaultProviderPolicy defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>'
         '<BoundingRoundBox x="0" y="0" width="70" height="40" cornerRadius="20" outlinePadding="2"/>'
-        '<Complication type="SMALL_IMAGE">'
-        '<PartImage x="20" y="5" width="30" height="30"><Image resource="[COMPLICATION.SMALL_IMAGE]"/></PartImage>'
-        '</Complication>'
-        '<Complication type="MONOCHROMATIC_IMAGE">'
-        f'<PartImage x="22" y="7" width="26" height="26" tintColor="{ACCENT}"><Image resource="[COMPLICATION.MONOCHROMATIC_IMAGE]"/></PartImage>'
-        '</Complication>'
-        '<Complication type="SHORT_TEXT">'
-        f'<PartText x="0" y="0" width="70" height="40"><Text align="CENTER"><Font family="{F_LABEL}" size="17" color="{ACCENT}">'
-        '<Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Font></Text></PartText>'
-        '</Complication>'
-        '<Complication type="EMPTY"/>'
-        '<Variant mode="AMBIENT" target="alpha" value="0"/>'
-        '</ComplicationSlot>'
+        f'{body}<Variant mode="AMBIENT" target="alpha" value="0"/></ComplicationSlot>'
     )
 
     # ---------------- always on layer (shown only in ambient)
@@ -472,6 +634,11 @@ def build():
     )
     raw_dir = os.path.join(RES, "raw")
     os.makedirs(raw_dir, exist_ok=True)
+    # Clear out images no longer used.
+    used = set(__import__("re").findall(r'resource="([a-z_0-9]+)"', xml)) | {"preview"}
+    for fn in os.listdir(DRAW):
+        if fn.endswith(".png") and fn[:-4] not in used:
+            os.remove(os.path.join(DRAW, fn))
     with open(os.path.join(raw_dir, "watchface.xml"), "w") as fh:
         fh.write(xml)
 

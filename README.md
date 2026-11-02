@@ -22,9 +22,23 @@ Every push to `main` checks the face against Google's Watch Face Format spec, bu
 
 Every build signs with the same key, so new versions install over the top.
 
-## Compass shortcut
+## Customising
 
-Watch Face Format doesn't let third-party faces read the compass, so the bezel is fixed with north at the top. The space under the N is a shortcut slot: long press the face, tap **Customise**, pick the slot and choose **Compass** (under app shortcuts) to open the live compass with one tap.
+Long press the face and tap **Customise**. There are five slots:
+
+- **Top shortcut**, just under the N. Empty by default. Put an app shortcut or any complication here.
+- **Left arc.** Battery by default. Takes anything with a progress value.
+- **Right arc.** Your step goal progress by default (leave it empty for that). Takes anything with a progress value.
+- **Left dial.** Heart rate by default (leave it empty for that).
+- **Right dial.** Steps by default.
+
+Watch Face Format doesn't let third-party faces read the compass sensor, so the bezel is fixed with north at the top.
+
+## Pebble
+
+- His eyes follow your wrist as you tilt it.
+- He blinks when you raise your wrist and when the minute changes.
+- Tap him, or wait for the hour, and he bounces.
 
 ## Editing the face
 

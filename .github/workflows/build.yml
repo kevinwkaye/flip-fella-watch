@@ -20,7 +20,7 @@ jobs:
           git clone --depth 1 --quiet https://github.com/google/watchface /tmp/wff
           python3 - <<'PY'
           import sys, xmlschema
-          schema = xmlschema.XMLSchema11('/tmp/wff/third_party/wff/specification/documents/1/watchface.xsd')
+          schema = xmlschema.XMLSchema11('/tmp/wff/third_party/wff/specification/documents/2/watchface.xsd')
           errors = list(schema.iter_errors('app/src/main/res/raw/watchface.xml'))
           for e in errors[:20]:
               print(e.path, e.reason)
