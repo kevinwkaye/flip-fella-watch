@@ -14,6 +14,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check the face against Google's Watch Face Format spec
+        run: |
+          pip install --quiet xmlschema
+          git clone --depth 1 --quiet https://github.com/google/watchface /tmp/wff
+          python3 - <<'PY'
+          import sys, xmlschema
+          schema = xmlschema.XMLSchema11('/tmp/wff/third_party/wff/specification/documents/1/watchface.xsd')
+          errors = list(schema.iter_errors('app/src/main/res/raw/watchface.xml'))
+          for e in errors[:20]:
+              print(e.path, e.reason)
+          sys.exit(1 if errors else 0)
+          PY
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -39,6 +52,6 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: Flip Fella Watch build ${{ github.run_number }}
-          body: Install flip-fella-watch.apk on the watch over wireless debugging. See the README for steps.
+          body: Install flip-fella-watch.apk on the watch with Bugjaeger over wireless debugging. See the README for steps.
           files: flip-fella-watch.apk
           make_latest: true

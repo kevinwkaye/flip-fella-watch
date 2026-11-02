@@ -1,8 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Flip Fella</string>
-    <string name="editor_name">Flip Fella dials</string>
-    <string name="slot_left">Left dial</string>
-    <string name="slot_right">Right dial</string>
-    <string name="editor_done">Done</string>
 </resources>

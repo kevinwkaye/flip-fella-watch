@@ -1,34 +1,40 @@
 # Flip Fella Watch
 
-Flip Fella for the Samsung Galaxy Watch Ultra. Flip clock cards in the middle, a compass bezel that turns with you in real time, battery and steps arcs, two dials and Pebble in a little window at the bottom.
+Flip Fella for the Samsung Galaxy Watch Ultra, built in Watch Face Format so it shows up in the watch's face picker on One UI 8 Watch (Wear OS 6).
+
+Flip clock cards in the middle, a compass bezel round the edge, battery and steps arcs, heart rate and step counts, a weekday row and Pebble in a little window at the bottom.
+
+![Preview](tools/out/preview.png)
 
 ## Get the APK
 
-Every push to `main` builds the face on GitHub Actions and publishes it as a release. Open the [latest release](../../releases/latest) on your phone and download `flip-fella-watch.apk`.
+Every push to `main` checks the face against Google's Watch Face Format spec, builds it on GitHub Actions and publishes it as a release. Open the [latest release](../../releases/latest) on your phone and download `flip-fella-watch.apk`.
 
 ## Install it on the watch
 
-You only need your phone. No PC.
+1. On the watch, turn on **Developer options** (Settings > About watch > Software information, tap Software version seven times).
+2. Turn the watch's Bluetooth off so it stays on Wi-Fi, then in Developer options turn on **ADB debugging** and **Wireless debugging**.
+3. In Bugjaeger on your phone, pair using the code, IP and port from **Pair new device**. The popup closes by itself when pairing works.
+4. Connect using the IP and port on the main Wireless debugging screen (a different port from pairing).
+5. In Bugjaeger, install `flip-fella-watch.apk`.
+6. Long press the watch face, swipe to the end, tap **Add** and pick **Flip Fella**.
+7. Turn Wireless debugging off and Bluetooth back on.
 
-1. On the watch, open **Settings > About watch > Software information** and tap **Software version** seven times to turn on Developer options.
-2. Go to **Settings > Developer options**, turn on **ADB debugging** and **Wireless debugging**. Make sure the watch and phone share the same Wi-Fi.
-3. In **Wireless debugging**, tap **Pair new device**. Note the pairing code and the IP address and port.
-4. On the phone, install **Bugjaeger** from the Play Store, pair with the code and address from step 3, then connect.
-5. In Bugjaeger, open the install screen and pick `flip-fella-watch.apk`.
-6. On the watch, long press the current face, swipe to the end and add **Flip Fella**.
+Every build signs with the same key, so new versions install over the top.
 
-Later builds install straight over the top, because every build signs with the same key.
+## Compass shortcut
 
-## Dials
+Watch Face Format doesn't let third-party faces read the compass, so the bezel is fixed with north at the top. The space under the N is a shortcut slot: long press the face, tap **Customise**, pick the slot and choose **Compass** (under app shortcuts) to open the live compass with one tap.
 
-Long press the face and tap **Customise** to choose what the two dials show. The right dial defaults to steps and also fills the right-hand arc (goal: 10,000). Set the left one to Samsung Health heart rate.
+## Editing the face
 
-## How it behaves
+The face is generated. Change `tools/generate.py`, then run:
 
-- The compass reads the watch's rotation sensor only while the screen is awake. With raise to wake, it never runs when the screen is off.
-- The minute flips with a staggered split-flap animation.
-- Pebble blinks every few seconds.
-- Always on display drops to dim outlined cards with no compass.
+```
+python3 tools/generate.py
+```
+
+It rewrites `app/src/main/res/raw/watchface.xml`, the images and `tools/out/preview.png`, so you can see the result before pushing.
 
 ## Fonts
 
