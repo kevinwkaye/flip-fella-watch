@@ -39,8 +39,17 @@ jobs:
       - name: Build APK
         run: gradle --no-daemon assembleDebug
 
-      - name: Name the APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk flip-fella-watch.apk
+      - name: Strip code and re-sign (Watch Face Format packages carry no code)
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          cp app/build/outputs/apk/debug/app-debug.apk unsigned.apk
+          zip -q -d unsigned.apk classes.dex 'META-INF/*'
+          "$BT/zipalign" -f 4 unsigned.apk aligned.apk
+          "$BT/apksigner" sign --ks app/debug.keystore --ks-pass pass:android \
+            --ks-key-alias androiddebugkey --key-pass pass:android \
+            --out flip-fella-watch.apk aligned.apk
+          "$BT/apksigner" verify flip-fella-watch.apk
+          unzip -l flip-fella-watch.apk | grep -c classes.dex && exit 1 || true
 
       - uses: actions/upload-artifact@v4
         with:
